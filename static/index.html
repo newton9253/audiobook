@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI声工坊 - 有声书制作</title>
+<link rel="stylesheet" href="/static/css/style.css?v=20260525g">
+</head>
+<body>
+
+<!-- ========== 顶部导航 ========== -->
+<header class="topbar">
+  <span class="brand">🎙 AI声工坊</span>
+  <div class="actions" id="topbar-actions">
+    <button class="btn btn-primary" onclick="App.newProject()">📂 新建项目</button>
+    <button class="btn" onclick="App.openProject()">📁 打开项目</button>
+    <button class="btn" onclick="App.showConfig()">⚙ 配置</button>
+    <input type="file" id="file-awb" class="hidden-input" accept=".awb" onchange="App.handleOpenProject(event)">
+  </div>
+  <div class="actions" id="topbar-project" style="display:none">
+    <button class="btn btn-primary" onclick="App.saveProject()">💾 保存</button>
+    <button class="btn btn-success" onclick="App.exportProject()">📦 导出</button>
+    <button class="btn" onclick="App.showReplaceModal()">🔤 文字替换</button>
+    <button class="btn" onclick="App.showConfig()">⚙ 配置</button>
+  </div>
+</header>
+
+<!-- ========== 主布局 ========== -->
+<div class="main-layout" id="main-layout">
+  <!-- 欢迎页 -->
+  <div class="welcome" id="welcome-page" style="flex:1">
+    <h1>AI声工坊</h1>
+    <p>导入小说 TXT → LLM 智能结构化 → TTS 语音合成</p>
+    <div class="welcome-actions">
+      <button class="btn btn-primary" onclick="App.newProject()">📂 新建项目</button>
+      <button class="btn" onclick="App.openProject()">📁 打开已有项目</button>
+    </div>
+  </div>
+
+  <!-- 项目工作区 (默认隐藏) -->
+  <div id="workspace" style="display:none; flex:1; display:none; flex-direction:row; overflow:hidden">
+    <!-- 左侧：章节列表 -->
+    <aside class="sidebar">
+      <div class="section-title">📖 章节列表</div>
+      <div class="chapter-list" id="chapter-list"></div>
+    </aside>
+
+    <!-- 中间：Segment 编辑器 -->
+    <section class="content-area">
+      <div class="content-header" id="content-header">
+        <h3 id="chapter-title">选择章节</h3>
+        <span class="status-badge raw" id="chapter-status">未处理</span>
+        <button class="btn btn-primary btn-sm" onclick="Chapter.structure()">🤖 结构化处理</button>
+        <button class="btn btn-success btn-sm" onclick="Chapter.synthesize()">🔊 TTS 合成</button>
+        <button class="btn btn-sm" onclick="Chapter.mergeAudio()">🔗 合并音频</button>
+        <button class="btn btn-sm" onclick="Chapter.reset()">🔄 重置</button>
+        <span style="margin-left:12px;font-size:12px;color:var(--text2)">语速:</span>
+        <input type="range" id="speed-slider" min="0.5" max="1.5" step="0.05" value="1.0"
+               oninput="Chapter.onSpeedSlider(this.value)"
+               style="width:80px;vertical-align:middle;accent-color:var(--accent)">
+        <span id="speed-label" style="font-size:12px;color:var(--accent);min-width:36px;display:inline-block">1.0x</span>
+      </div>
+      <div class="segment-editor" id="segment-editor">
+        <div class="no-data">请从左侧选择一个章节</div>
+      </div>
+    </section>
+
+    <!-- 右侧：角色面板 -->
+    <aside class="char-panel" id="char-panel">
+      <div class="section-title">
+        <span>🎭 角色管理</span>
+        <button class="btn btn-primary btn-sm" onclick="Character.showAddDialog()" style="margin-left:auto;font-size:11px;padding:2px 8px">+ 添加角色</button>
+      </div>
+      <div class="char-list" id="char-list"></div>
+      <div class="char-detail" id="char-detail" style="display:none"></div>
+    </aside>
+  </div>
+</div>
+
+<!-- ========== 底部状态栏 ========== -->
+<footer class="statusbar">
+  <span id="status-project">无项目</span>
+  <span id="status-llm">LLM: -</span>
+  <span id="status-tts">TTS: -</span>
+  <span style="margin-left:auto" id="status-msg">就绪</span>
+</footer>
+
+<!-- ========== 配置弹窗 ========== -->
+<div class="modal-overlay" id="config-modal">
+  <div class="modal">
+    <h3>⚙ 系统配置</h3>
+    <div class="form-group">
+      <label>LLM 提供者</label>
+      <select id="cfg-llm-provider" onchange="Config.onProviderChange()">
+        <option value="openai">OpenAI 兼容</option>
+        <option value="tongyi">通义千问</option>
+        <option value="zhipu">智谱 GLM</option>
+      </select>
+    </div>
+    <div id="cfg-llm-openai">
+      <div class="form-group">
+        <label>API Base URL</label>
+        <input id="cfg-openai-url" placeholder="https://api.openai.com/v1">
+      </div>
+      <div class="form-group">
+        <label>API Key</label>
+        <input id="cfg-openai-key" type="password" placeholder="sk-...">
+      </div>
+      <div class="form-group">
+        <label>模型</label>
+        <input id="cfg-openai-model" placeholder="gpt-4o">
+      </div>
+    </div>
+    <div id="cfg-llm-tongyi" style="display:none">
+      <div class="form-group">
+        <label>API Key</label>
+        <input id="cfg-tongyi-key" type="password" placeholder="sk-...">
+      </div>
+      <div class="form-group">
+        <label>模型</label>
+        <input id="cfg-tongyi-model" placeholder="qwen-plus">
+      </div>
+    </div>
+    <div id="cfg-llm-zhipu" style="display:none">
+      <div class="form-group">
+        <label>API Key</label>
+        <input id="cfg-zhipu-key" type="password">
+      </div>
+      <div class="form-group">
+        <label>模型</label>
+        <input id="cfg-zhipu-model" placeholder="glm-4">
+      </div>
+    </div>
+    <hr style="border-color:var(--border); margin:16px 0">
+    <div class="form-group">
+      <label>TTS 提供者</label>
+      <select id="cfg-tts-provider">
+        <option value="voxcpm2">VoxCPM2</option>
+        <option value="http">通用 HTTP</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>TTS Base URL</label>
+      <input id="cfg-tts-url" placeholder="http://localhost:5022">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="Config.testConnection()">🔌 测试连接</button>
+      <button class="btn btn-primary" onclick="Config.save()">💾 保存配置</button>
+      <button class="btn" onclick="App.hideConfig()">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 新建项目弹窗 ========== -->
+<div class="modal-overlay" id="new-project-modal">
+  <div class="modal" style="max-width:540px">
+    <h3>📂 新建项目</h3>
+    <div class="form-group">
+      <label>TXT 文件</label>
+      <input type="file" id="np-txt-file" accept=".txt" style="width:100%">
+    </div>
+    <div class="form-group">
+      <label>输出文件夹</label>
+      <div style="display:flex;gap:6px">
+        <input id="np-output-dir" placeholder="选择文件夹存放音频和项目文件" readonly style="flex:1;font-size:11px">
+        <button class="btn btn-sm" onclick="App.browseFolder()">📁 浏览</button>
+      </div>
+      <small style="color:var(--text2)">留空则使用默认 output 目录</small>
+    </div>
+    <div class="form-group" id="np-folder-browser" style="display:none">
+      <div style="font-size:10px;color:var(--text2);margin-bottom:4px" id="np-browse-path"></div>
+      <div id="np-folder-list" style="max-height:160px;overflow-y:auto;border:1px solid var(--border);border-radius:4px"></div>
+      <div style="margin-top:4px;display:flex;gap:4px">
+        <button class="btn btn-sm" onclick="App.browseParent()">⬆ 上级</button>
+        <button class="btn btn-sm btn-primary" onclick="App.selectFolder()">✅ 选择当前文件夹</button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="App.confirmNewProject()">🚀 创建项目</button>
+      <button class="btn" onclick="document.getElementById('new-project-modal').classList.remove('show')">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 声音设计弹窗 ========== -->
+<div class="modal-overlay" id="voice-design-modal">
+  <div class="modal">
+    <h3>🎨 声音设计</h3>
+    <div class="form-group">
+      <label>角色名</label>
+      <input id="vd-name" readonly>
+    </div>
+    <div class="form-group">
+      <label>音色描述 Prompt</label>
+      <textarea id="vd-prompt" rows="3" placeholder="中年男性，低沉威严，语速沉稳"></textarea>
+    </div>
+    <div class="form-group">
+      <label>试听文本</label>
+      <input id="vd-text" value="这是一段用于声音设计的试听文本，用来展示角色的音色特点。">
+    </div>
+    <div id="vd-result" style="display:none; margin-top:8px">
+      <audio id="vd-audio" controls style="width:100%"></audio>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="VoiceDesign.generate()">🎤 生成试听</button>
+      <button class="btn btn-success" onclick="VoiceDesign.apply()">✅ 应用音色</button>
+      <button class="btn" onclick="document.getElementById('voice-design-modal').classList.remove('show')">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 文字替换弹窗 ========== -->
+<div class="modal-overlay" id="replace-modal">
+  <div class="modal" style="max-width:600px">
+    <h3>🔤 文字替换规则</h3>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:12px">
+      在TTS合成前自动将"查找文本"替换为"替换文本"。支持精确匹配替换（区分大小写）。
+    </p>
+    <div id="replace-rules"></div>
+    <div style="margin-top:8px">
+      <button class="btn btn-sm" onclick="App.addReplaceRule()">+ 添加规则</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="App.saveReplacements()">💾 保存规则</button>
+      <button class="btn" onclick="document.getElementById('replace-modal').classList.remove('show')">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== Toast 消息 ========== -->
+<div class="toast" id="toast"></div>
+
+<!-- ========== JS ========== -->
+<script src="/static/js/app.js?v=20260525g"></script>
+<script src="/static/js/api.js?v=20260525g"></script>
+<script src="/static/js/chapter.js?v=20260525g"></script>
+<script src="/static/js/character.js?v=20260525g"></script>
+<script src="/static/js/voice-design.js?v=20260525g"></script>
+<script src="/static/js/config.js?v=20260525g"></script>
+
+</body>
+</html>
